@@ -6,15 +6,18 @@
 #define TCAADDR 0x70
 #define MAX_SENSORS 1
 
-#define TEMP_API "ZO3QN5CIYSFT5PE0"
-#define HUMID_API "P5MV8HSFT8PLORHR"
+#define DELORIAN_API "5432Y5DW7IXMW332"
 
 // MDNS mdns;
 SI7021 sensor;
 
 //ButtonPin
-const int buttonPin1 = 4;
-ClickButton button1(buttonPin1, LOW, CLICKBTN_PULLUP);
+// const int buttonPin1 = 4;
+#define BUTTON_PIN D4
+#define LED_PIN D5
+ClickButton button1(BUTTON_PIN, LOW, CLICKBTN_PULLUP);
+
+bool ON;
 
 
 double temperature;
@@ -33,7 +36,7 @@ unsigned long lastBlink = 0;
 unsigned long blinkRate = 333.0;
 
 //WebhookDataOut
-String api_key = TEMP_API; // Replace this string with a valid ThingSpeak Write API Key.
+String api_key = DELORIAN_API; // Replace this string with a valid ThingSpeak Write API Key.
 String field1 = "";
 String field2 = "";  // i.e. field2 is null
 String field3 = "";
@@ -55,16 +58,37 @@ void setup() {
     Wire.begin();
 
     pinMode(D4, INPUT_PULLUP);
+    pinMode(D5, OUTPUT);
 
-  // Setup button timers (all in milliseconds / ms)
-  // (These are default if not set, but changeable for convenience)
-  button1.debounceTime   = 20;   // Debounce timer in ms
-  button1.multiclickTime = 250;  // Time limit for multi clicks
-  button1.longClickTime  = 1000; // time until "held-down clicks" register
+    // Setup button timers (all in milliseconds / ms)
+    // (These are default if not set, but changeable for convenience)
+    button1.debounceTime   = 20;   // Debounce timer in ms
+    button1.multiclickTime = 250;  // Time limit for multi clicks
+    button1.longClickTime  = 1000; // time until "held-down clicks" register
 
     Particle.variable("Temp", temperature);
     Particle.variable("Humidity", humidity);
 
+}
+
+void checkInput(){
+  button1.Update();
+  int clicks = button1.clicks;
+  if (clicks == 0){} //Pass On Ish
+  else{ //We Got Somethign Jim
+    ON = !ON; //Toggle States
+  }
+}
+
+void lightButton(){
+  if(ON){
+    //Light Button
+    digitalWrite(LED_PIN,HIGH);
+  }
+  else{
+    //No Lighto Buddy
+    digitalWrite(LED_PIN,LOW);
+  }
 }
 
 void getData(uint8_t sensor_index){
@@ -96,7 +120,6 @@ void checkTempSensor(){
 
 }
 
-
 void loop() {
     //Blink Status
     unsigned long thisTime = millis();
@@ -105,22 +128,26 @@ void loop() {
       lastBlink = thisTime;
     }
 
-    button1.Update();
+    checkInput();
+    lightButton();
     checkTempSensor();
-    delay(10);
 
+
+    //Publish Information
     if ((thisTime - lastPublish ) > publishRate){
       publishStatus();
       lastPublish = thisTime;
     }
+    delay(10);
 }
 
 void publishStatus() {
     // To write multiple fields, you set the various fields you want to send
-    api_key = TEMP_API;
+    api_key = DELORIAN_API;
     field1 = String(temperatures[0]);
     field2 = String( humidities[0] );
-    field3 = String(temperatures[2]);
+    if (ON){ field3 = String( "Delorian: ON" ); }
+    else{ field3 = String( "Delorian: OFF" ); }
     field4 = String(temperatures[3]);
     field5 = String(temperatures[4]);
     field6 = String(temperatures[5]);
@@ -129,7 +156,7 @@ void publishStatus() {
 
     String TSjson;
     createTSjson(TSjson);
-    Particle.publish("writeThingSpeak",TSjson,60,PUBLIC);
+    Particle.publish("Delorian_Status",TSjson,60,PUBLIC);
 }
 
 
