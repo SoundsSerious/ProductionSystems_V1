@@ -15,10 +15,15 @@ SI7021 sensor;
 // const int buttonPin1 = 4;
 #define BUTTON_PIN D4
 #define LED_PIN D5
+#define RELAYPOWER_PIN D6
 ClickButton button1(BUTTON_PIN, LOW, CLICKBTN_PULLUP);
 
+//Variables
 bool ON;
+bool Thermal_Protection = true; //Assume We Start With Thermal Protection On
 
+float MAX_TEMP = 45.0; //C
+float TEMP_HYSTERISIS_VALUE = 0.5; //C
 
 double temperature;
 double humidity;
@@ -59,6 +64,7 @@ void setup() {
 
     pinMode(D4, INPUT_PULLUP);
     pinMode(D5, OUTPUT);
+    pinMode(D6, OUTPUT);
 
     // Setup button timers (all in milliseconds / ms)
     // (These are default if not set, but changeable for convenience)
@@ -77,13 +83,25 @@ void checkInput(){
   if (clicks == 0){} //Pass On Ish
   else{ //We Got Somethign Jim
     ON = !ON; //Toggle States
+    if (ON){ Particle.publish("Delorian Status","ON");}
+    else {  Particle.publish("Delorian Status", "OFF"); }
   }
 }
 
 void lightButton(){
   if(ON){
-    //Light Button
-    digitalWrite(LED_PIN,HIGH);
+    //If Thermal Protection Is Acvite, Blink The Button
+    if (Thermal_Protection){
+      if ( blink_state ){
+        digitalWrite(LED_PIN,HIGH);
+      }
+      else{
+        digitalWrite(LED_PIN,LOW);
+      }
+    }
+    else{ //Light Button All The Time If On
+      digitalWrite(LED_PIN,HIGH);
+    }
   }
   else{
     //No Lighto Buddy
@@ -131,14 +149,54 @@ void loop() {
     checkInput();
     lightButton();
     checkTempSensor();
-
+    IRHeatTemperatureMangament();
 
     //Publish Information
     if ((thisTime - lastPublish ) > publishRate){
       publishStatus();
       lastPublish = thisTime;
     }
-    delay(10);
+    delay(5);
+}
+
+void IRHeatTemperatureMangament(){
+  //Check If ON
+  if (ON){
+    //Check If Temp Is Over Max
+    if ( temperatures[0] > MAX_TEMP){
+      //Check If Thermal Protection Mode Is Not Active Then Activate It
+      if (!Thermal_Protection){ // This Will Set The First Time Over Temp
+        Thermal_Protection = true;
+        Particle.publish("Thermal Protection", "Activated");
+      }
+      //Turn Off Light Above Max
+      digitalWrite(RELAYPOWER_PIN,LOW);
+    }
+    //Else Check If Temperature Is Less Than The Hysterisis Value
+    else if( temperatures[0] < MAX_TEMP - TEMP_HYSTERISIS_VALUE){
+      //Check If Thermal Protection is set, if so deactivate it
+      if (Thermal_Protection){
+        Thermal_Protection = false;
+        Particle.publish("Thermal Protection", "Deactivated");
+      }
+      //When Below The Hystersis Range Dump The Heat
+      digitalWrite(RELAYPOWER_PIN,HIGH);
+    }
+    else{ // For Temperatures Less Than MAX, but In The Hysteriss Range:
+      //1. If Thermal Protection Is Active, Do Not Turn On Light
+      if (Thermal_Protection){
+        digitalWrite(RELAYPOWER_PIN,LOW);
+      }
+      //2.  Otherwise Use That Heat Buddy!
+      else{
+        digitalWrite(RELAYPOWER_PIN,HIGH);
+      }
+    }
+  }
+  else {
+    //Turn Off Light
+    digitalWrite(RELAYPOWER_PIN,LOW);
+  }
 }
 
 void publishStatus() {
@@ -148,7 +206,8 @@ void publishStatus() {
     field2 = String( humidities[0] );
     if (ON){ field3 = String( "Delorian: ON" ); }
     else{ field3 = String( "Delorian: OFF" ); }
-    field4 = String(temperatures[3]);
+    if (Thermal_Protection){ field4 = String( "Thermal Protection: Active" ); }
+    else{ field4 = String( "Thermal Protection: Negative" ); }
     field5 = String(temperatures[4]);
     field6 = String(temperatures[5]);
     field7 = String(temperatures[6]);
